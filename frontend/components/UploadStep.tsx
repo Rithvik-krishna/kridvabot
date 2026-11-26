@@ -178,8 +178,9 @@ export function UploadStep({
     return firstLine.length > 88 ? `${firstLine.slice(0, 88)}...` : firstLine;
   }, [prompt, isPromptLoading]);
 
-  const isCustomPrompt =
-    Boolean(defaultPrompt) && prompt.trim() !== defaultPrompt.trim();
+  const isCustomPrompt = defaultPrompt
+    ? prompt.trim() !== defaultPrompt.trim()
+    : false;
 
   if (isSubmitting) {
     const stageText =

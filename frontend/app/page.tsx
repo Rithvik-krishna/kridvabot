@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Armchair } from "lucide-react";
 import { ExportStep } from "@/components/ExportStep";
 import { ReviewStep } from "@/components/ReviewStep";
 import { Stepper } from "@/components/Stepper";
+import { ToastContainer, ToastItem, ToastTone } from "@/components/ui/Toast";
 import { UploadStep } from "@/components/UploadStep";
 import {
   fetchDefaultPrompt,
@@ -22,6 +23,7 @@ export default function HomePage() {
   // Step 1 state
   const [files, setFiles] = useState<File[]>([]);
   const [prompt, setPrompt] = useState<string>("");
+  const [defaultPrompt, setDefaultPrompt] = useState<string>("");
   const [existingNamesText, setExistingNamesText] = useState<string>(
     DEFAULT_EXISTING_NAMES
   );
@@ -38,11 +40,37 @@ export default function HomePage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generationAttempt, setGenerationAttempt] = useState<number>(0);
 
+  // Global toasts
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const notify = useCallback(
+    (opts: {
+      message: string;
+      tone: ToastTone;
+      actionLabel?: string;
+      onAction?: () => void;
+    }) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setToasts((prev) => [...prev.slice(-3), { id, ...opts }]);
+      setTimeout(() => {
+        dismissToast(id);
+      }, 4500);
+    },
+    [dismissToast]
+  );
+
   useEffect(() => {
     let active = true;
     fetchDefaultPrompt()
-      .then((defaultPrompt) => {
-        if (active) setPrompt(defaultPrompt);
+      .then((loadedPrompt) => {
+        if (active) {
+          setPrompt(loadedPrompt);
+          setDefaultPrompt(loadedPrompt);
+        }
       })
       .catch((err) => {
         if (active) {
@@ -71,10 +99,17 @@ export default function HomePage() {
       setImages(data.images);
       setGroups(data.groups);
       setStep(2);
+      notify({
+        message: `${data.groups.length} ${
+          data.groups.length === 1 ? "piece" : "pieces"
+        } detected`,
+        tone: "success",
+      });
     } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : "Failed to upload and group photos."
-      );
+      const msg =
+        err instanceof Error ? err.message : "Failed to upload and group photos.";
+      setUploadError(msg);
+      notify({ message: msg, tone: "error" });
     } finally {
       setIsUploading(false);
     }
@@ -94,9 +129,10 @@ export default function HomePage() {
       setGenerationAttempt((prev) => prev + 1);
       setStep(3);
     } catch (err) {
-      setGenerateError(
-        err instanceof Error ? err.message : "Failed to start catalog generation."
-      );
+      const msg =
+        err instanceof Error ? err.message : "Failed to start catalog generation.";
+      setGenerateError(msg);
+      notify({ message: msg, tone: "error" });
     } finally {
       setIsStartingGeneration(false);
     }
@@ -114,23 +150,30 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900">
-      <header className="border-b border-stone-200 bg-white/80 backdrop-blur-xs">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <header className="border-b border-stone-200 bg-white/90 backdrop-blur-xs">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-stone-900 text-stone-50">
-              <Armchair className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-stone-900 text-stone-50 shadow-xs">
+              <Armchair className="h-5 w-5" aria-hidden="true" />
             </div>
             <div>
               <h1 className="text-lg font-semibold tracking-tight text-stone-900">
                 Furniture Catalog Bot
               </h1>
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-stone-600">
                 Workshop Photos → 1:1 Studio Perspectives → Catalog ZIP
               </p>
             </div>
           </div>
 
-          <Stepper currentStep={step} />
+          <Stepper
+            currentStep={step}
+            onNavigateBack={(target) => {
+              if (step === 2 && target === 1) {
+                setStep(1);
+              }
+            }}
+          />
         </div>
       </header>
 
@@ -140,6 +183,7 @@ export default function HomePage() {
             files={files}
             onFilesChange={setFiles}
             prompt={prompt}
+            defaultPrompt={defaultPrompt}
             onPromptChange={setPrompt}
             existingNamesText={existingNamesText}
             onExistingNamesTextChange={setExistingNamesText}
@@ -159,18 +203,23 @@ export default function HomePage() {
             onGenerate={handleGenerate}
             isStarting={isStartingGeneration}
             error={generateError}
+            onNotify={notify}
           />
         )}
 
         {step === 3 && jobId && (
           <ExportStep
             jobId={jobId}
+            pieceCount={groups.length}
             attempt={generationAttempt}
             onRetry={handleGenerate}
             onStartNewBatch={handleReset}
+            onNotify={notify}
           />
         )}
       </main>
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
