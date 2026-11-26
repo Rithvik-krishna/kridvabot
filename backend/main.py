@@ -37,12 +37,12 @@ app = FastAPI(title="Furniture Catalog Bot API", version="1.0.0")
 
 _allowed_origins_raw = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000",
+    "http://localhost:3000,http://127.0.0.1:3000,https://kridvafurniture.vercel.app",
 )
 ALLOWED_ORIGINS = [
-    origin.strip()
+    origin.strip().rstrip("/")
     for origin in _allowed_origins_raw.split(",")
-    if origin.strip()
+    if origin.strip().rstrip("/")
 ]
 
 app.add_middleware(
