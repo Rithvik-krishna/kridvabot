@@ -1,0 +1,18 @@
+# Environment & Secrets
+.env
+backend/.env
+frontend/.env.local
+
+# Python
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Generated Jobs
+backend/jobs/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
