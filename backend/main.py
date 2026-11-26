@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
+import shutil
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -32,12 +35,19 @@ JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Furniture Catalog Bot API", version="1.0.0")
 
+_allowed_origins_raw = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+)
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in _allowed_origins_raw.split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,6 +56,35 @@ app.add_middleware(
 app.mount("/jobs", StaticFiles(directory=str(JOBS_DIR)), name="jobs")
 
 _STATE_LOCK = threading.Lock()
+
+
+def cleanup_old_jobs(max_age_hours: int | None = None) -> int:
+    """Remove expired job directories under JOBS_DIR to keep disk usage bounded."""
+    if max_age_hours is None:
+        try:
+            max_age_hours = int(os.getenv("JOB_TTL_HOURS", "24"))
+        except ValueError:
+            max_age_hours = 24
+    if max_age_hours <= 0:
+        return 0
+
+    cutoff = time.time() - (max_age_hours * 3600)
+    removed = 0
+    for entry in JOBS_DIR.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
+@app.on_event("startup")
+def _on_startup() -> None:
+    cleanup_old_jobs()
 
 
 def _sanitize_filename(filename: str | None, idx: int) -> str:
@@ -89,6 +128,8 @@ async def upload_and_group(files: list[UploadFile] = File(...)) -> UploadAndGrou
         client = get_gemini_client()
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    cleanup_old_jobs()
 
     job_id = uuid.uuid4().hex[:12]
     job_dir = JOBS_DIR / job_id
